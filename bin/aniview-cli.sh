@@ -16,7 +16,8 @@ fi
 ENCODED=$(printf '%s' "$QUERY" | jq -sRr @uri)
 API_URL="https://api.dailymotion.com/videos?search=$ENCODED&limit=100&fields=title,id"
 
-LIST=$(curl -s "$API_URL" | jq -r '.list[] | "\(.title)|https://www.dailymotion.com/video/\(.id)"')
+LIST=$(curl -s "$API_URL" | jq -r '.list[] | "\(.title)|https://www.dailymotion.com/video/\(.id)"' \
+| grep -viE 'trailer|amv|asmv|hentai|h3ntai|gameplay|psp|gba|ps3|iso|game|download|preview|impressions|react|reacción|reaccion|minecraft|easter[[:space:]]*egg')
 
 SELECTED=$(echo "$LIST" | fzf --height 20 --border --prompt="Selecciona un video: ")
 
