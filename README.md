@@ -23,7 +23,7 @@ Run the script with a search query for an anime episode. The script automaticall
 ./bin/aniview-cli.sh "Another capitulo 1"
 
 
-You can use “capitulo”, “episodio”, or “EP” interchangeably.
+You can use “capitulo”, “episodio”, "sub", or “EP” interchangeably.
 
 If the anime has a saga or arc, include it in the search query, e.g.:
 
