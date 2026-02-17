@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-# ===== ABOUT =====
 echo "======================================"
 echo " animeview - fjavierl-dev"
 echo " Buscador y reproductor de anime CLI"
@@ -8,54 +7,77 @@ echo "======================================"
 echo ""
 
 QUERY="$*"
-
 if [ -z "$QUERY" ]; then
-    read -rp "Buscar en Dailymotion: " QUERY
+    read -rp "Buscar anime: " QUERY
 fi
 
-# ===== Map de alias para videos que la API no devuelve =====
-# Ejemplo: ALIAS["dragon ball ep1"]="url_del_video"
+# ===== Alias =====
 declare -A ALIAS
-# Añade aquí episodios problemáticos que la API no devuelve
-# ALIAS["nombre del anime epX"]="URL del video"
-
-# Convertir búsqueda a minúsculas
 QUERY_LOWER=$(echo "$QUERY" | tr '[:upper:]' '[:lower:]')
 
-# Si existe un alias, reproducir directamente
 if [[ -n "${ALIAS[$QUERY_LOWER]}" ]]; then
     echo "Reproduciendo alias conocido: $QUERY"
     mpv "${ALIAS[$QUERY_LOWER]}"
     exit 0
 fi
 
-# ===== Normalización de episodios para la búsqueda API =====
+# ===== Normalización episodios =====
 for i in {1..99}; do
     padded=$(printf "%02d" $i)
     QUERY_LOWER=$(echo "$QUERY_LOWER" | sed -E "s/ep$i/episode $padded/g")
 done
-
-# Escapar para URL
 ENCODED=$(printf '%s' "$QUERY_LOWER" | jq -sRr @uri)
-API_URL="https://api.dailymotion.com/videos?search=$ENCODED&limit=100&fields=title,id"
 
-# ===== Obtener lista de resultados =====
-RAW_LIST=$(curl -s "$API_URL" | jq -r '.list[] | "\(.title)|https://www.dailymotion.com/video/\(.id)"' \
-| grep -viE 'trailer|traíler|amv|asmv|hentai|h3ntai|gameplay|psp|gba|ps3|iso|game|download|preview|impressions|react|reacción|reaccion|minecraft|easter[[:space:]]*egg|review|clip|cover|teaser|curiosidades|avance|opening|ending|op|intro|oficial|edit|ED1')
+# ===== Función de filtros =====
+filter_results() {
+    grep -viE 'trailer|traíler|amv|asmv|hentai|h3ntai|gameplay|psp|gba|ps3|ps2|iso|game|download|preview|impressions|react|reacción|reaccion|minecraft|easter[[:space:]]*egg|review|clip|cover|teaser|curiosidades|avance|opening|ending|op|intro|oficial|edit|ED1|cutscenes|ncg|playthrough|title|musique|Musique|OST|Jugando|juego|resumen|moments'
+}
 
-# ===== Separar y priorizar títulos con palabras clave de episodio =====
+# ===== Archivos temporales para paralelo =====
+DM_FILE=$(mktemp)
+YT_FILE=$(mktemp)
+
+# ===== Dailymotion =====
+DM_API="https://api.dailymotion.com/videos?search=$ENCODED&limit=100&fields=title,id"
+curl -s "$DM_API" \
+    | jq -r '.list[] | "[DM] \(.title)|https://www.dailymotion.com/video/\(.id)"' \
+    | filter_results > "$DM_FILE" &
+
+# ===== YouTube =====
+timeout 5 yt-dlp "ytsearch15:$QUERY" \
+    --flat-playlist \
+    --skip-download \
+    --print "[YT] %(title)s|%(webpage_url)s" 2>/dev/null \
+    | filter_results > "$YT_FILE" &
+
+wait
+
+# ===== Leer resultados =====
+DM_LIST=$(cat "$DM_FILE")
+YT_LIST=$(cat "$YT_FILE")
+
+rm "$DM_FILE" "$YT_FILE"
+
+# ===== Combinar y deduplicar =====
+COMBINED=$(printf "%s\n%s\n" "$DM_LIST" "$YT_LIST" | awk -F '|' '{ if(!seen[tolower($1)]++) print $0 }')
+
+# ===== Filtrar solo títulos con episodio =====
+FILTERED=$(echo "$COMBINED" | awk -F '|' '{ title=tolower($1); if(title ~ /(ep|episode|episodio|capitulo)/) print $0 }')
+
+# ===== Prioridad =====
 PRIORITY_KEYWORDS='EP|Episode|Episodio|CAPITULO|Capitulo|capitulos'
-
-PRIORITY_LIST=$(echo "$RAW_LIST" | grep -E "$PRIORITY_KEYWORDS")
-NORMAL_LIST=$(echo "$RAW_LIST" | grep -v -E "$PRIORITY_KEYWORDS")
-
-# Lista final, prioritaria primero
+PRIORITY_LIST=$(echo "$FILTERED" | grep -E "$PRIORITY_KEYWORDS")
+NORMAL_LIST=$(echo "$FILTERED" | grep -v -E "$PRIORITY_KEYWORDS")
 LIST="$PRIORITY_LIST"$'\n'"$NORMAL_LIST"
 
-# ===== Seleccionar con fzf =====
-SELECTED=$(echo "$LIST" | fzf --height 20 --border --prompt="Selecciona un video: ")
+# ===== Ocultar URLs para mostrar solo títulos en fzf =====
+DISPLAY_LIST=$(echo "$LIST" | awk -F '|' '{print $1}')
 
-VIDEO_URL=$(echo "$SELECTED" | cut -d '|' -f2 | xargs)
+# ===== Selección con fzf =====
+SELECTED_TITLE=$(echo "$DISPLAY_LIST" | fzf --height 20 --border --prompt="Selecciona un video: ")
+
+# ===== Recuperar URL correspondiente =====
+VIDEO_URL=$(echo "$LIST" | grep -i "^$SELECTED_TITLE|" | cut -d '|' -f2 | xargs)
 
 # ===== Reproducir =====
 if [ -n "$VIDEO_URL" ]; then
