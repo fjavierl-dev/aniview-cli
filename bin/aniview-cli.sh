@@ -35,10 +35,10 @@ ENCODED=$(printf '%s' "$QUERY_LOWER" | jq -sRr @uri)
 
 # ===== Función de filtros =====
 filter_results() {
-    grep -viE 'trailer|traíler|amv|asmv|hentai|h3ntai|gameplay|psp|gba|ps3|ps2|iso|game|download|preview|impressions|react|reacción|reaccion|minecraft|easter[[:space:]]*egg|review|clip|cover|teaser|curiosidades|avance|opening|ending|op|intro|oficial|edit|ED1|cutscenes|ncg|playthrough|title|musique|Musique|OST|Jugando|juego|resumen|moments'
+    grep -viE 'trailer|traíler|amv|asmv|hentai|h3ntai|gameplay|psp|gba|ps3|ps2|iso|game|download|preview|impressions|react|reacción|reaccion|minecraft|easter[[:space:]]*egg|review|clip|cover|teaser|curiosidades|avance|opening|ending|op|intro|oficial|edit|ED1|cutscenes|ncg|playthrough|title|musique|Musique|OST|Jugando|juego|resumen|moments|photos'
 }
 
-# ===== Archivos temporales para paralelo =====
+# ===== Archivos temporales =====
 DM_FILE=$(mktemp)
 YT_FILE=$(mktemp)
 
@@ -57,32 +57,32 @@ timeout 5 yt-dlp "ytsearch15:$QUERY_LOWER" \
 
 wait
 
-# ===== Leer resultados =====
 DM_LIST=$(cat "$DM_FILE")
 YT_LIST=$(cat "$YT_FILE")
-
 rm "$DM_FILE" "$YT_FILE"
 
 # ===== Combinar y deduplicar =====
 COMBINED=$(printf "%s\n%s\n" "$DM_LIST" "$YT_LIST" | awk -F '|' '{ if(!seen[tolower($1)]++) print $0 }')
 
-# ===== Filtrar solo títulos con episodio =====
-FILTERED="$COMBINED"  # Ya añadimos "capitulo" a la búsqueda si no existía
-
 # ===== Prioridad =====
 PRIORITY_KEYWORDS='EP|Episode|Episodio|CAPITULO|Capitulo|capitulos'
-PRIORITY_LIST=$(echo "$FILTERED" | grep -E "$PRIORITY_KEYWORDS")
-NORMAL_LIST=$(echo "$FILTERED" | grep -v -E "$PRIORITY_KEYWORDS")
+PRIORITY_LIST=$(echo "$COMBINED" | grep -E "$PRIORITY_KEYWORDS")
+NORMAL_LIST=$(echo "$COMBINED" | grep -v -E "$PRIORITY_KEYWORDS")
 LIST="$PRIORITY_LIST"$'\n'"$NORMAL_LIST"
 
-# ===== Ocultar URLs para mostrar solo títulos en fzf =====
-DISPLAY_LIST=$(echo "$LIST" | awk -F '|' '{print $1}')
+# ===== Construir mapa título → URL para no romper con caracteres especiales =====
+declare -A MAP_TITLE_URL
+while IFS='|' read -r title url; do
+    MAP_TITLE_URL["$title"]="$url"
+done <<< "$LIST"
 
-# ===== Selección con fzf =====
+# ===== Ocultar URLs en fzf =====
+DISPLAY_LIST=$(printf "%s\n" "${!MAP_TITLE_URL[@]}")
+
+# ===== Selección =====
 SELECTED_TITLE=$(echo "$DISPLAY_LIST" | fzf --height 20 --border --prompt="Selecciona un video: ")
 
-# ===== Recuperar URL correspondiente =====
-VIDEO_URL=$(echo "$LIST" | grep -i "^$SELECTED_TITLE|" | cut -d '|' -f2 | xargs)
+VIDEO_URL="${MAP_TITLE_URL[$SELECTED_TITLE]}"
 
 # ===== Reproducir =====
 if [ -n "$VIDEO_URL" ]; then
