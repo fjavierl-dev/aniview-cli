@@ -2,7 +2,7 @@
 
 echo "======================================"
 echo " animeview - fjavierl-dev"
-echo " Buscador y reproductor de anime CLI"
+echo " Buscador y reproductor de anime CLI PRO"
 echo "======================================"
 echo ""
 
@@ -19,6 +19,11 @@ if [[ -n "${ALIAS[$QUERY_LOWER]}" ]]; then
     echo "Reproduciendo alias conocido: $QUERY"
     mpv "${ALIAS[$QUERY_LOWER]}"
     exit 0
+fi
+
+# ===== Si no hay indicio de episodio, añadir "capitulo" automáticamente =====
+if ! [[ "$QUERY_LOWER" =~ (ep|episode|capitulo|capitulos) ]]; then
+    QUERY_LOWER="$QUERY_LOWER capitulo"
 fi
 
 # ===== Normalización episodios =====
@@ -44,7 +49,7 @@ curl -s "$DM_API" \
     | filter_results > "$DM_FILE" &
 
 # ===== YouTube =====
-timeout 5 yt-dlp "ytsearch15:$QUERY" \
+timeout 5 yt-dlp "ytsearch15:$QUERY_LOWER" \
     --flat-playlist \
     --skip-download \
     --print "[YT] %(title)s|%(webpage_url)s" 2>/dev/null \
@@ -62,7 +67,7 @@ rm "$DM_FILE" "$YT_FILE"
 COMBINED=$(printf "%s\n%s\n" "$DM_LIST" "$YT_LIST" | awk -F '|' '{ if(!seen[tolower($1)]++) print $0 }')
 
 # ===== Filtrar solo títulos con episodio =====
-FILTERED=$(echo "$COMBINED" | awk -F '|' '{ title=tolower($1); if(title ~ /(ep|episode|episodio|capitulo)/) print $0 }')
+FILTERED="$COMBINED"  # Ya añadimos "capitulo" a la búsqueda si no existía
 
 # ===== Prioridad =====
 PRIORITY_KEYWORDS='EP|Episode|Episodio|CAPITULO|Capitulo|capitulos'
